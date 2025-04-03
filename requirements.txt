@@ -1,0 +1,34 @@
+# Core dependencies
+ultralytics
+opencv-python-headless
+torch
+torchvision
+torchaudio
+
+# DeepSORT dependencies
+lap
+cython
+filterpy
+deep_sort_realtime
+
+# Video processing
+moviepy
+
+# Action recognition
+einops
+timm
+decord
+
+# Utils
+tqdm
+matplotlib
+
+# TensorFlow and data science
+numpy
+tensorflow>=2.0.0
+scikit-learn
+pandas
+imageio
+
+# Git repositories
+git+https://github.com/tensorflow/docs

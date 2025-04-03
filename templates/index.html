@@ -1,0 +1,128 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Action Recognition Detection</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 30px;
+    }
+
+    .container {
+      background: white;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    video {
+      width: 100%;
+      max-height: 400px;
+      margin-top: 20px;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: #1e90ff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #007ad9;
+    }
+
+    .loading {
+      color: #999;
+      margin-top: 10px;
+    }
+
+    .result-block {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🎥 Action Recognition Detection</h2>
+
+    <form id="uploadForm">
+      <label>Select a video:</label><br>
+      <input type="file" name="video" required><br><br>
+
+      <label>YOLO Version:</label><br>
+      <select name="yolo_version">
+        <option value="v8">YOLOv8</option>
+        <option value="v11">YOLOv11</option>
+      </select><br><br>
+
+      <label>Confidence Threshold:</label><br>
+      <input type="number" step="0.01" name="conf_thres" value="0.3"><br><br>
+
+      <button type="submit">Run Detection</button>
+    </form>
+
+    <div class="loading" id="loadingText" style="display: none;">⏳ Processing video... Please wait.</div>
+
+    <div class="result-block" id="resultBlock" style="display: none;">
+      <h3>✅ Detection Complete</h3>
+      <video id="resultVideo" controls>
+        <source id="resultSource" src="" type="video/mp4">
+        Your browser does not support the video tag.
+      </video>
+      <br><br>
+      <a id="downloadLink" href="#" download>⬇️ Download Video</a>
+    </div>
+  </div>
+
+  <script>
+  const form = document.getElementById('uploadForm');
+  const loadingText = document.getElementById('loadingText');
+  const resultBlock = document.getElementById('resultBlock');
+  const resultVideo = document.getElementById('resultVideo');
+  const resultSource = document.getElementById('resultSource'); // ← Add this
+  const downloadLink = document.getElementById('downloadLink');
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+
+    loadingText.style.display = 'block';
+    resultBlock.style.display = 'none';
+
+    try {
+      const res = await fetch('/detect', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        const videoURL = data.video_url + '?t=' + new Date().getTime(); // cache-buster
+
+        resultSource.src = videoURL;     // ✅ Set the <source> tag
+        resultVideo.load();              // ✅ Force reload of video
+        resultVideo.play();              // ⏯️ Optional: auto-play
+
+        downloadLink.href = videoURL;
+
+        loadingText.style.display = 'none';
+        resultBlock.style.display = 'block';
+      } else {
+        loadingText.textContent = '❌ Error: ' + data.error;
+      }
+    } catch (err) {
+      loadingText.textContent = '❌ Request failed. Check server console.';
+    }
+  };
+
+  </script>
+</body>
+</html>
