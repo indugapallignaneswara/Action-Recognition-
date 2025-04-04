@@ -7,19 +7,13 @@ import json
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from utils.utils import draw_boxes_on_video
-
+import numpy as np
 class Detector:
     def __init__(self, conf_thres=None, device='cuda'):
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.conf_thres = conf_thres if isinstance(conf_thres, (float, int)) and 0 < conf_thres <= 1 else 0.3
         self.tracker = DeepSort(max_age=30)
         self.model = None  # Lazy load in detect_and_track
-
-        # # Check if model file exists
-        # if not os.path.exists(model_path):
-        #     raise FileNotFoundError(f"[ERROR] Model file not found: {model_path}")
-
-        # self.model = YOLO(model_path).to(self.device)
 
         # Validate threshold
         if conf_thres is None or not isinstance(conf_thres, (float, int)) or not (0 < conf_thres <= 1):
@@ -36,7 +30,8 @@ class Detector:
         # DeepSORT tracker
         self.tracker = DeepSort(max_age=30)
 
-    def preprocess_video(self, input_path, output_path, target_size=(640, 640), frame_skip=None):
+    @staticmethod
+    def preprocess_video(input_path, output_path, target_size=(640, 640), frame_skip=None):
         if not os.path.exists(input_path):
             raise FileNotFoundError(f"[ERROR] Input video file not found: {input_path}")
 
@@ -49,17 +44,16 @@ class Detector:
 
         duration_secs = total_frames / fps
 
-        # 🧠 Calculate dynamic frame skip if not provided
+        # 🧠 Calculate dynamic frame skip
         if frame_skip is None:
             target_frames = 12
             frame_skip = max(1, total_frames // target_frames)
             print(f"[INFO] Video duration = {round(duration_secs, 2)}s, Total frames = {total_frames}, "
                 f"Auto frame_skip = {frame_skip}")
 
-        new_fps = fps // frame_skip
-        if new_fps == 0:  # Ensure valid fps
-            new_fps = 1
+        new_fps = max(1, fps // frame_skip)
 
+        # Ensure output directory exists
         if not os.path.exists(os.path.dirname(output_path)):
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -71,24 +65,33 @@ class Detector:
         )
 
         frames = []
-        frame_count = 0
         timestamps = []
+        frame_count = 0
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
+
             if frame_count % frame_skip == 0:
+                # Handle RGBA videos
+                if frame.shape[2] == 4:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+
+                # Resize to 640×640
                 resized = cv2.resize(frame, target_size)
+
                 out.write(resized)
                 frames.append(resized)
                 timestamps.append(frame_count / fps)
+
             frame_count += 1
 
         cap.release()
         out.release()
-        return frames, timestamps, new_fps
 
+        print(f"[✓] Preprocessing complete. Resized video saved to: {output_path}")
+        return frames, timestamps, new_fps
 
     def detect_and_track(self, input_video, yolo_version="v8"):
         # Validate video input
@@ -118,10 +121,11 @@ class Detector:
         model_name = os.path.basename(input_video).split('.')[0]
         resized_video_path = f"outputs/{model_name}_resized.mp4"
 
+        # Use the static method correctly
         frames, timestamps, fps = self.preprocess_video(input_video, resized_video_path)
 
         detection_results = []
-        printf(f"model used for inference", model_name)
+        print(f"model used for inference", model_path)
         for idx, frame in enumerate(frames):
             results = self.model(frame, conf=self.conf_thres)[0]
             detections = []
@@ -136,31 +140,23 @@ class Detector:
 
             tracks = self.tracker.update_tracks(detections, frame=frame)
 
-        for track in tracks:
-            if not track.is_confirmed():
-                continue
-            track_id = track.track_id
-            ltrb = track.to_ltrb()
-            conf = track.get_det_conf() or 0.0
+            for track in tracks:
+                if not track.is_confirmed():
+                    continue
+                track_id = track.track_id
+                ltrb = track.to_ltrb()
+                conf = track.get_det_conf() or 0.0
 
-            if conf < self.conf_thres:
-                continue  # ❌ skip low-confidence tracks
+                if conf < self.conf_thres:
+                    continue  # ❌ skip low-confidence tracks
 
-            x1, y1, x2, y2 = map(int, ltrb)
-            timestamp_value = timestamps[idx] if idx < len(timestamps) and timestamps[idx] is not None else 0.0
-            detection_results.append({
-                'track_id': track_id,
-                'frame': idx,
-                'timestamp': round(timestamp_value, 2),
-                'bbox': [x1, y1, x2, y2],
-                'confidence': round(conf, 4)
-            })
-
-
-        # Save to JSON
-        output_json = f"outputs/{model_name}_detections.json"
-        with open(output_json, 'w') as f:
-            json.dump(detection_results, f, indent=2)
-
-        print(f"[✓] Detection + tracking complete. Results saved to: {output_json}")
+                x1, y1, x2, y2 = map(int, ltrb)
+                timestamp_value = timestamps[idx] if idx < len(timestamps) and timestamps[idx] is not None else 0.0
+                detection_results.append({
+                    'track_id': track_id,
+                    'frame': idx,
+                    'timestamp': round(timestamp_value, 2),
+                    'bbox': [x1, y1, x2, y2],
+                    'confidence': round(conf, 4)
+                })
         return detection_results
